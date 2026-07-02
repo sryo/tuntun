@@ -9,6 +9,32 @@ import Testing
     for (language, word) in love {
         #expect(EmojiSuggestions.emoji(for: word, language: language) == "❤️")
     }
+    let fire: [(KeyboardLanguage, String)] = [
+        (.english, "fire"), (.french, "feu"), (.german, "feuer"), (.spanish, "fuego"),
+        (.italian, "fuoco"), (.dutch, "vuur"), (.portuguese, "fogo"), (.russian, "огонь"),
+    ]
+    for (language, word) in fire {
+        #expect(EmojiSuggestions.emoji(for: word, language: language) == "🔥")
+    }
+}
+
+// CLDR-derived coverage: "auto" is the everyday word for car in these four
+// languages (in Spanish via the curated Rioplatense entry).
+@Test func autoSuggestsCarWhereAutoMeansCar() {
+    for language in [KeyboardLanguage.spanish, .german, .dutch, .italian] {
+        #expect(EmojiSuggestions.emoji(for: "auto", language: language) == "🚗")
+    }
+}
+
+// Chat slang comes from the curated overlay, not CLDR.
+@Test func slangSuggestsLaughter() {
+    let slang: [(KeyboardLanguage, String)] = [
+        (.english, "lol"), (.french, "mdr"), (.spanish, "jaja"), (.italian, "ahah"),
+        (.portuguese, "kkkk"), (.portuguese, "rsrs"), (.russian, "лол"), (.russian, "ахаха"),
+    ]
+    for (language, word) in slang {
+        #expect(EmojiSuggestions.emoji(for: word, language: language) == "😂")
+    }
 }
 
 @Test func lookupIsLanguageScoped() {

@@ -42,6 +42,27 @@ than imposing a formal license:
 
 The top 200,000 bigrams per language ship as quantized log-probabilities.
 
+## Emoji suggestion maps
+
+The per-language word→emoji tables in
+`FilaCore/Sources/FilaCore/Language/EmojiSuggestions.swift` are derived from
+the **Unicode CLDR** emoji annotations (per-locale keyword and name data for
+each emoji).
+
+- Source: https://github.com/unicode-org/cldr
+  (`common/annotations/<locale>.xml` and `common/annotationsDerived/<locale>.xml`
+  for en, fr, de, es, it, nl, pt, ru; CLDR's base `pt` is Brazilian Portuguese,
+  matching the shipped pt-BR bundle)
+- License: **Unicode License v3** (https://www.unicode.org/license.txt).
+  Copyright © Unicode, Inc.
+- The material was modified: emoji→keyword annotations are inverted to
+  keyword→emoji, restricted to emoji in Unicode's published frequency ranking
+  (https://www.unicode.org/emoji/frequency.html) and to single-word keywords
+  present in each language's shipped vocabulary, with ambiguous keywords
+  dropped. A small curated overlay adds chat slang the annotations do not
+  carry. The generator is `Tools/EmojiMapBuilder`, run by
+  `Tools/rebuild-emoji-maps.sh`.
+
 Languages included: English, French, German, Spanish, Italian, Dutch, Brazilian
 Portuguese, Russian.
 

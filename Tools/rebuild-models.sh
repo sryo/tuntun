@@ -40,3 +40,6 @@ if [[ ! -f "$FREQ/pt_br_ignored.txt" ]]; then
 fi
 
 swift run -c release --package-path ModelBuilder ModelBuilder "$FREQ" "$CORPUS" "$OUT"
+
+# The emoji maps filter CLDR keywords against the vocabularies built above.
+./rebuild-emoji-maps.sh "$WORK"
