@@ -40,3 +40,6 @@ Two deliberate choices worth knowing before "fixing" them:
 
 To regenerate the language models from their public corpora, run
 `Tools/rebuild-models.sh` (sources and licenses in [ATTRIBUTION.md](ATTRIBUTION.md)).
+
+Code is under the terms in [LICENSE](LICENSE); the bundled language models are
+CC BY-SA 4.0 derivatives (see [ATTRIBUTION.md](ATTRIBUTION.md)).
