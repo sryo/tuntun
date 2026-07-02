@@ -1,0 +1,89 @@
+name: Fila
+options:
+  bundleIdPrefix: com.sryo.fila
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+packages:
+  FilaCore:
+    path: FilaCore
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: "CL6XWJCS9R"
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+targets:
+  FilaKit:
+    type: framework
+    platform: iOS
+    sources:
+      - path: FilaKit
+        excludes:
+          - "Resources/**"
+      - path: FilaKit/Resources/Models
+        type: folder          # folder reference — preserves Models/<lang>/ hierarchy
+    dependencies:
+      - package: FilaCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sryo.fila.kit
+        APPLICATION_EXTENSION_API_ONLY: "YES"
+        GENERATE_INFOPLIST_FILE: "YES"
+
+  Fila:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+      - path: Settings.bundle
+        buildPhase: resources
+    dependencies:
+      - package: FilaCore
+      - target: FilaKit
+        embed: true
+      - target: FilaKeyboard
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sryo.fila
+        INFOPLIST_KEY_CFBundleDisplayName: Tuntun
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
+        CODE_SIGN_ENTITLEMENTS: App/Fila.entitlements
+        GENERATE_INFOPLIST_FILE: "YES"
+
+  FilaKeyboard:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Extension
+    dependencies:
+      - package: FilaCore
+      - target: FilaKit
+    info:
+      path: Extension/Info.plist
+      properties:
+        CFBundleDisplayName: Tuntun
+        # Track the containing app's version (App Store rejects an extension
+        # whose version differs from its host app).
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.keyboard-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
+          NSExtensionAttributes:
+            IsASCIICapable: false
+            PrefersRightToLeft: false
+            PrimaryLanguage: en-US
+            # Full Access — required for haptic feedback and clipboard Paste.
+            RequestsOpenAccess: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sryo.fila.keyboard
+        CODE_SIGN_ENTITLEMENTS: Extension/FilaKeyboard.entitlements
