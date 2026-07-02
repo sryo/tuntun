@@ -394,6 +394,20 @@ private func candidate(_ word: String) -> DecodeCandidate {
     #expect(!doc.commands(after: mark).contains { if case .unlearn = $0 { return true }; return false })
 }
 
+// documentContextBeforeInput returns nil in the window right after the keyboard
+// re-activates on an app switch. The word boundary is then unknown, so the flick
+// deletes one character instead of silently doing nothing.
+@Test @MainActor func deleteWordFallsBackToCharDeleteWhenContextUnavailable() {
+    let doc = FakeDocument()
+    let session = CompositionSession(
+        configuration: .init(autoCapitalize: false),
+        decode: { _, _, _ in [] },
+        readTextBeforeCursor: { nil as String? },
+        emit: { doc.apply($0) })
+    session.deleteWord()
+    #expect(doc.commands == [.deleteBackward(count: 1)])
+}
+
 // MARK: - Secure fields
 
 @Test @MainActor func secureFieldAbandonsInPlaceAndTypesVerbatim() {

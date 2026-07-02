@@ -294,16 +294,23 @@ public final class CompositionSession {
             emit(.setStrip([]))
             return
         }
-        if let before = readTextBeforeCursor() {
-            let trailingSpaces = before.reversed().prefix { $0 == " " }.count
-            if trailingSpaces > 0 { emit(.deleteBackward(count: trailingSpaces)) }
-            let word = String(before.dropLast(trailingSpaces).reversed().prefix { !$0.isWhitespace }.reversed())
-            if !word.isEmpty { emit(.deleteBackward(count: word.count)) }
-            // Deleting the word we just committed is a correction — unlearn it.
-            if let last = lastCommitted, word == last {
-                emit(.unlearn(word: last))
-                lastCommitted = nil
-            }
+        guard let before = readTextBeforeCursor() else {
+            // The document proxy reports nil context in the brief window after the
+            // keyboard re-activates on an app switch, so the word boundary is
+            // unknown. Delete a single character rather than nothing — the flick
+            // still acts, and the edit re-syncs the proxy so the next one deletes a
+            // whole word.
+            emit(.deleteBackward(count: 1))
+            return
+        }
+        let trailingSpaces = before.reversed().prefix { $0 == " " }.count
+        if trailingSpaces > 0 { emit(.deleteBackward(count: trailingSpaces)) }
+        let word = String(before.dropLast(trailingSpaces).reversed().prefix { !$0.isWhitespace }.reversed())
+        if !word.isEmpty { emit(.deleteBackward(count: word.count)) }
+        // Deleting the word we just committed is a correction — unlearn it.
+        if let last = lastCommitted, word == last {
+            emit(.unlearn(word: last))
+            lastCommitted = nil
         }
         recomputeContext()
     }
