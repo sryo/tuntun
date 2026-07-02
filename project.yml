@@ -43,7 +43,9 @@ targets:
     platform: iOS
     sources:
       - path: App
-      - path: Settings.bundle
+        excludes:
+          - "Settings.bundle"
+      - path: App/Settings.bundle
         buildPhase: resources
     dependencies:
       - target: FilaKit
@@ -64,11 +66,11 @@ targets:
     type: app-extension
     platform: iOS
     sources:
-      - path: Extension
+      - path: Keyboard
     dependencies:
       - target: FilaKit
     info:
-      path: Extension/Info.plist
+      path: Keyboard/Info.plist
       properties:
         CFBundleDisplayName: Tuntun
         # Track the containing app's version (App Store rejects an extension
@@ -87,4 +89,4 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sryo.fila.keyboard
-        CODE_SIGN_ENTITLEMENTS: Extension/FilaKeyboard.entitlements
+        CODE_SIGN_ENTITLEMENTS: Keyboard/FilaKeyboard.entitlements
