@@ -148,7 +148,7 @@ final class KeyboardEngine {
             }
         }
         // Smart-emoji: suggest an emoji for the top word (just below it in the strip).
-        if let top = result.first, let emoji = EmojiSuggestions.emoji(for: top.word) {
+        if let top = result.first, let emoji = EmojiSuggestions.emoji(for: top.word, language: language) {
             result.insert(DecodeCandidate(word: emoji, score: top.score - 0.01), at: min(1, result.count))
         }
         // The literal reading always rides last, scored below the checker rescue.
