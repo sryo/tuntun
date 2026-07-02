@@ -9,13 +9,17 @@ import FilaCore
 /// writes the top hypothesis into the document as real text (rewritten in place —
 /// not marked text, so it appears in every host), with alternatives in the strip.
 /// Decoded words are auto-capitalized at sentence starts (the lexicon stays
-/// lowercase; casing is a presentation transform — see ``cased(_:)``).
+/// lowercase; casing is a presentation transform).
 /// Editing is gestural — →space · ←delete word (hold = backspace repeat) ·
 /// ↑shift (row shows capitals) · ↓return · long-press = precision magnifier
 /// (slide up for numbers/symbols). There are no alternate row planes: precise
 /// digits/symbols live in the numbers panel (123 on the strip, auto-shown for
 /// numeric fields), emoji/cursor panels behind ☺. Keyboard switching is the
 /// system globe bar's job.
+///
+/// All composition state lives in ``CompositionSession`` (FilaCore, where it is
+/// unit-tested); this view forwards gestures as session events and applies the
+/// emitted commands to its sink, strip, and row.
 @MainActor
 public final class KeyboardControllerView: UIView {
     /// Where typed text goes. Strongly held — the controller owns its sink (the
@@ -23,29 +27,14 @@ public final class KeyboardControllerView: UIView {
     public var sink: TextSink?
 
     private let engine = KeyboardEngine()
+    private var session: CompositionSession!
     private var suggestionStrip: SuggestionStripView!
     private var compressedRow: CompressedRowView!
-
-    private var tapBuffer: [Double] = []
-    /// Tap indices the user pinned to an exact letter via the precision magnifier;
-    /// the decoder is forced to honor these. Cleared when the word commits.
-    private var forcedLetters: [Int: Character] = [:]
-    private var context: [String] = []
-    private var currentCandidates: [DecodeCandidate] = []
-    /// The provisional word currently written into the document as real text
-    /// (rewritten on each tap). Committed on space/selection.
-    private var provisional = ""
-    /// Whether the word currently being composed should be auto-capitalized
-    /// (sentence start). Latched when the word begins, applied at render/commit.
-    private var capitalizeCurrentWord = false
-    /// The most recently committed word — deleting it right back out is treated
-    /// as a correction, so its learned weight is decremented.
-    private var lastCommitted: String?
 
     /// Secure/password fields: taps insert the nearest letter verbatim — no
     /// decoding, no rewriting, no suggestions, and nothing is learned.
     public var isSecureField = false {
-        didSet { if isSecureField, isSecureField != oldValue { abandonComposition() } }
+        didSet { session.configuration.isSecureField = isSecureField }
     }
 
     /// Numeric fields (PIN, phone, decimal pads): the numbers panel opens
@@ -60,10 +49,6 @@ public final class KeyboardControllerView: UIView {
             }
         }
     }
-
-    /// Manual shift, toggled off → once → lock → off by the up-left gesture.
-    private enum ShiftState { case off, once, lock }
-    private var shift: ShiftState = .off
 
     private let stripHeight: CGFloat = 40
     private let rowHeight: CGFloat = 76
@@ -82,11 +67,18 @@ public final class KeyboardControllerView: UIView {
         buildViews()
         applyTheme()
         updateStrip([])     // idle strip offers Paste right away if the clipboard has text
+        session = CompositionSession(
+            configuration: makeConfiguration(),
+            decode: { [engine] taps, context, forced in
+                engine.candidates(for: taps, context: context, forced: forced)
+            },
+            readTextBeforeCursor: { [weak self] in self?.sink?.textBeforeCursor },
+            emit: { [weak self] in self?.apply($0) })
         // Dictionaries load off-thread; when they land, any word typed in the
         // meantime is re-decoded against the real vocabulary.
         engine.onModelReady = { [weak self] in
-            guard let self, !self.tapBuffer.isEmpty else { return }
-            self.refreshCandidates()
+            guard let self, self.session.isComposing else { return }
+            self.session.refreshCandidates()
         }
         settingsToken = SettingsStore.observe { [weak self] in self?.reloadSettings() }
     }
@@ -111,10 +103,18 @@ public final class KeyboardControllerView: UIView {
     /// rebuild the engine for the new default language + enabled dictionaries.
     private func reloadSettings() {
         engine.applySettings()
+        session.configuration = makeConfiguration()
         compressedRow.setKeys(engine.keys)
         compressedRow.glyphScale = settings.textScale
         compressedRow.glyphWidth = settings.textWidth
         applyTheme()
+    }
+
+    private func makeConfiguration() -> CompositionConfiguration {
+        CompositionConfiguration(autoCapitalize: settings.autoCapitalize,
+                                 smartSpacing: settings.smartSpacing,
+                                 isSecureField: isSecureField,
+                                 language: engine.language)
     }
 
     public required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
@@ -154,16 +154,30 @@ public final class KeyboardControllerView: UIView {
         ])
     }
 
-    // MARK: Composition
+    // MARK: Session wiring
 
-    /// Rewrite the provisional word in the document as real text — delete the old
-    /// one and insert the new. Uses plain insert/delete (not marked text), so
-    /// characters actually appear in every host, including the playground.
-    private func render(_ newProvisional: String) {
-        guard newProvisional != provisional else { return }
-        for _ in 0..<provisional.count { sink?.deleteBackward() }
-        if !newProvisional.isEmpty { sink?.insertText(newProvisional) }
-        provisional = newProvisional
+    /// Apply one session command to the real sink/strip/row/engine.
+    private func apply(_ command: CompositionCommand) {
+        switch command {
+        case .insertText(let text):
+            sink?.insertText(text)
+        case .deleteBackward(let count):
+            for _ in 0..<count { sink?.deleteBackward() }
+        case .moveCursor(let offset):
+            sink?.moveCursor(by: offset)
+        case .setStrip(let candidates):
+            updateStrip(candidates)
+        case .setShift(let shift):
+            switch shift {
+            case .off:  compressedRow.shiftDisplay = .off
+            case .once: compressedRow.shiftDisplay = .once
+            case .lock: compressedRow.shiftDisplay = .lock
+            }
+        case .learn(let word, let taps, let edits):
+            engine.learn(word: word, taps: taps, edits: edits)
+        case .unlearn(let word):
+            engine.forget(word: word)
+        }
     }
 
     /// Every strip refresh re-evaluates the clipboard: an idle strip offers a
@@ -176,171 +190,12 @@ public final class KeyboardControllerView: UIView {
                                showPaste: candidates.isEmpty && UIPasteboard.general.hasStrings)
     }
 
-    private func refreshCandidates() {
-        guard !tapBuffer.isEmpty else {
-            currentCandidates = []
-            updateStrip([])
-            render("")
-            return
-        }
-        let candidates = engine.candidates(for: tapBuffer, context: context, forced: forcedLetters)
-        // Auto-capitalize for display and commit; the lexicon/decoder stay lowercase.
-        let display = candidates.map { DecodeCandidate(word: cased($0.word), score: $0.score, edits: $0.edits) }
-        currentCandidates = display
-        updateStrip(display)
-        render(display.first?.word ?? "")
-    }
-
-    /// Apply casing to a decoded (lowercase) word: manual shift wins, else
-    /// auto-capitalization for the active language and latched sentence-start.
-    private func cased(_ word: String) -> String {
-        let locale = Locale(identifier: engine.language.rawValue)
-        switch shift {
-        case .lock:
-            return word.uppercased(with: locale)
-        case .once:
-            return word.prefix(1).uppercased(with: locale) + word.dropFirst()
-        case .off:
-            return Autocapitalization.cased(word,
-                                            sentenceStart: capitalizeCurrentWord,
-                                            english: engine.language == .english,
-                                            locale: locale)
-        }
-    }
-
-    /// All shift changes go through here so the row's rendering stays in sync.
-    private func setShift(_ newValue: ShiftState) {
-        shift = newValue
-        switch newValue {
-        case .off:  compressedRow.shiftDisplay = .off
-        case .once: compressedRow.shiftDisplay = .once
-        case .lock: compressedRow.shiftDisplay = .lock
-        }
-    }
-
-    private func toggleShift() {
-        switch shift {
-        case .off:  setShift(.once)
-        case .once: setShift(.lock)
-        case .lock: setShift(.off)
-        }
-        refreshCandidates()   // re-case the in-progress word live
-    }
-
-    /// Rebuild the prediction context from the document itself (excluding any
-    /// in-progress word), so it stays correct after deletions of any granularity.
-    private func recomputeContext() {
-        guard let before = sink?.textBeforeCursor else { context = []; return }
-        var text = before[...]
-        if !provisional.isEmpty, text.hasSuffix(provisional) {
-            text = text.dropLast(provisional.count)
-        }
-        let words = text.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
-        context = words.suffix(8).map(String.init)
-    }
-
-    /// Finalize the current word (defaults to the shown provisional, or an
-    /// explicitly chosen suggestion), leaving it as permanent text.
-    private func commit(word: String?) {
-        let chosen = word ?? currentCandidates.first?.word ?? provisional
-        render(chosen)                 // make the document match the chosen word
-        if !chosen.isEmpty {
-            context.append(chosen)
-            if context.count > 8 { context.removeFirst() }
-            let edits = currentCandidates.first(where: { $0.word == chosen })?.edits
-            engine.learn(word: chosen, taps: tapBuffer, edits: edits)   // adapt spatial + learn vocab
-            lastCommitted = chosen
-        }
-        provisional = ""               // now permanent — don't rewrite it later
-        tapBuffer.removeAll()
-        forcedLetters.removeAll()
-        currentCandidates = []
-        updateStrip([])
-        if shift == .once { setShift(.off) }  // one-shot spent
-    }
-
-    /// Drop any in-progress composition WITHOUT touching the document — used when
-    /// the document changed under us (caret moved, host edited) or the field is secure.
-    private func abandonComposition() {
-        provisional = ""
-        tapBuffer.removeAll()
-        forcedLetters.removeAll()
-        currentCandidates = []
-        updateStrip([])
-    }
-
     /// Called by the host whenever the document text or selection changes. If the
     /// change wasn't ours (the text before the caret no longer ends with the
-    /// provisional word), the composition is abandoned in place — rewriting it
-    /// would delete unrelated text — and the prediction context is rebuilt.
+    /// provisional word), the session abandons the composition in place —
+    /// rewriting it would delete unrelated text — and rebuilds its context.
     public func hostTextDidChange() {
-        if provisional.isEmpty {
-            recomputeContext()
-            // Idle → re-evaluate the Paste chip (the clipboard may have changed
-            // while another app or field had focus).
-            if tapBuffer.isEmpty { updateStrip([]) }
-            return
-        }
-        let before = sink?.textBeforeCursor ?? ""
-        if !before.hasSuffix(provisional) {
-            abandonComposition()
-            recomputeContext()
-        }
-    }
-
-    // MARK: Actions
-
-    private func insertSpace() {
-        if !tapBuffer.isEmpty { commit(word: nil) }
-        let before = sink?.textBeforeCursor ?? ""
-        if settings.smartSpacing, !isSecureField, TypingBehavior.shouldConvertDoubleSpaceToPeriod(before) {
-            sink?.deleteBackward()      // drop the existing trailing space
-            sink?.insertText(". ")      // …and make it ". "
-        } else {
-            sink?.insertText(" ")
-        }
-        recomputeContext()
-    }
-
-    private func insertReturn() {
-        if !tapBuffer.isEmpty { commit(word: nil) }
-        sink?.insertText("\n")
-    }
-
-    /// Single-character backspace (delete-aware: peels a tap before touching
-    /// committed text). Called repeatedly by the row's hold-to-repeat.
-    private func backspace() {
-        if !tapBuffer.isEmpty {
-            tapBuffer.removeLast()
-            forcedLetters[tapBuffer.count] = nil   // drop any pin on the removed tap
-            refreshCandidates()       // re-renders the shorter provisional (or clears it)
-        } else {
-            sink?.deleteBackward()    // no composition: delete a committed character
-            recomputeContext()        // a char delete must not drop a whole context word
-        }
-    }
-
-    private func deleteWord() {
-        if !tapBuffer.isEmpty {
-            render("")
-            tapBuffer.removeAll()
-            forcedLetters.removeAll()
-            currentCandidates = []
-            updateStrip([])
-            return
-        }
-        if let before = sink?.textBeforeCursor {
-            let trailingSpaces = before.reversed().prefix { $0 == " " }.count
-            for _ in 0..<trailingSpaces { sink?.deleteBackward() }
-            let word = String(before.dropLast(trailingSpaces).reversed().prefix { !$0.isWhitespace }.reversed())
-            for _ in 0..<word.count { sink?.deleteBackward() }
-            // Deleting the word we just committed is a correction — unlearn it.
-            if let last = lastCommitted, word == last {
-                engine.forget(word: last)
-                lastCommitted = nil
-            }
-        }
-        recomputeContext()
+        session.hostTextDidChange()
     }
 
     // MARK: Bonus panels (overlay the row, toggled from the suggestion strip)
@@ -356,7 +211,7 @@ public final class KeyboardControllerView: UIView {
     }
 
     private func showPanel(_ kind: BonusPanelView.Kind) {
-        if !tapBuffer.isEmpty { commit(word: nil) }
+        session.commitComposition()
         bonusPanel?.removeFromSuperview()
         let panel = BonusPanelView(kind: kind, theme: theme)
         panel.delegate = self
@@ -384,80 +239,44 @@ public final class KeyboardControllerView: UIView {
 // MARK: - CompressedRowViewDelegate
 
 extension KeyboardControllerView: CompressedRowViewDelegate {
-    /// Verbatim entry for secure fields: the exact letter (or the tap's nearest
-    /// letter), shift applied, written straight through — never decoded or learned.
-    private func insertSecure(_ letter: Character) {
-        var s = String(letter)
-        if shift != .off {
-            s = s.uppercased(with: Locale(identifier: engine.language.rawValue))
-            if shift == .once { setShift(.off) }
-        }
-        sink?.insertText(s)
-    }
-
     func compressedRow(_ view: CompressedRowView, didTapAtNormalizedX x: Double) {
         if isSecureField {
-            if let letter = engine.nearestLetters(for: [x]).first { insertSecure(letter) }
+            if let letter = engine.nearestLetters(for: [x]).first { session.secureTap(letter) }
             return
         }
-        if tapBuffer.isEmpty {
-            capitalizeCurrentWord = settings.autoCapitalize && Autocapitalization.isSentenceStart(sink?.textBeforeCursor)
-        }
-        tapBuffer.append(x)
-        refreshCandidates()
+        session.tap(at: x)
     }
 
     func compressedRow(_ view: CompressedRowView, didPickLetter letter: Character, atNormalizedX x: Double) {
         if isSecureField {
-            insertSecure(letter)
+            session.secureTap(letter)
             return
         }
-        if tapBuffer.isEmpty {
-            capitalizeCurrentWord = settings.autoCapitalize && Autocapitalization.isSentenceStart(sink?.textBeforeCursor)
-        }
-        tapBuffer.append(x)                                 // keep alignment for learning
-        forcedLetters[tapBuffer.count - 1] = Character(letter.lowercased())
-        refreshCandidates()
+        session.pickLetter(letter, at: x)
     }
 
     func compressedRow(_ view: CompressedRowView, didTapLetter letter: Character) {
-        insertPrecise(String(letter))
+        session.insertPrecise(String(letter))
     }
 
-    /// Shared verbatim insertion for magnifier hint picks and panel chips, with
-    /// smart punctuation re-spacing applied where it makes sense.
-    private func insertPrecise(_ text: String) {
-        if !tapBuffer.isEmpty { commit(word: nil) }
-        let before = sink?.textBeforeCursor ?? ""
-        if settings.smartSpacing, !isSecureField, text.count == 1, let ch = text.first,
-           let replacement = TypingBehavior.smartPunctuation(ch, before: before) {
-            sink?.deleteBackward()          // move the space to after the punctuation
-            sink?.insertText(replacement)
-        } else {
-            sink?.insertText(text)
-        }
-        recomputeContext()
-    }
-
-    func compressedRowInsertSpace(_ view: CompressedRowView) { insertSpace() }
-    func compressedRowInsertReturn(_ view: CompressedRowView) { insertReturn() }
-    func compressedRowBackspace(_ view: CompressedRowView) { backspace() }
-    func compressedRowDeleteWord(_ view: CompressedRowView) { deleteWord() }
-    func compressedRowToggleShift(_ view: CompressedRowView) { toggleShift() }
+    func compressedRowInsertSpace(_ view: CompressedRowView) { session.insertSpace() }
+    func compressedRowInsertReturn(_ view: CompressedRowView) { session.insertReturn() }
+    func compressedRowBackspace(_ view: CompressedRowView) { session.backspace() }
+    func compressedRowDeleteWord(_ view: CompressedRowView) { session.deleteWord() }
+    func compressedRowToggleShift(_ view: CompressedRowView) { session.toggleShift() }
 }
 
 // MARK: - SuggestionStripViewDelegate
 
 extension KeyboardControllerView: SuggestionStripViewDelegate {
     func suggestionStrip(_ view: SuggestionStripView, didSelect word: String) {
-        commit(word: word)
-        sink?.insertText(" ")
+        session.selectCandidate(word)
     }
 
     // Long-press a candidate to remove it from the learned dictionary.
     func suggestionStrip(_ view: SuggestionStripView, didLongPress word: String) {
         guard engine.forget(word: word) else { return }   // only learned words are removable
-        refreshCandidates()
+        session.refreshCandidates()
     }
 
     func suggestionStripDidTogglePanels(_ view: SuggestionStripView) {
@@ -477,14 +296,12 @@ extension KeyboardControllerView: SuggestionStripViewDelegate {
 
 extension KeyboardControllerView: BonusPanelDelegate {
     func panelInsert(_ text: String) {
-        insertPrecise(text)
+        session.insertPrecise(text)
     }
     func panelMoveCursor(by offset: Int) {
-        if !tapBuffer.isEmpty { commit(word: nil) }
-        sink?.moveCursor(by: offset)
-        recomputeContext()
+        session.moveCursor(by: offset)
     }
-    func panelBackspace() { backspace() }
+    func panelBackspace() { session.backspace() }
     func panelPaste() { pasteFromClipboard() }
     func panelClose() { closePanel() }
 }
@@ -493,7 +310,7 @@ extension KeyboardControllerView {
     /// The one place pasteboard *content* is read — user-initiated, so the
     /// system's paste banner/alert here is expected.
     private func pasteFromClipboard() {
-        if !tapBuffer.isEmpty { commit(word: nil) }
-        if let s = UIPasteboard.general.string, !s.isEmpty { sink?.insertText(s); recomputeContext() }
+        session.commitComposition()
+        if let s = UIPasteboard.general.string, !s.isEmpty { session.insertVerbatim(s) }
     }
 }
