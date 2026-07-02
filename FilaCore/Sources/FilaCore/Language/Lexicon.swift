@@ -7,10 +7,9 @@ import Foundation
 /// valid word. The trie is keyed by each word's *transliterated key sequence*
 /// (see ``Transliterator``), so "don't" lives under d-o-n-t and "été" under
 /// e-t-e; a node stores every display form that shares its key sequence, each
-/// with its own unigram log-prior ("well" and "we'll" are siblings). In
-/// production the trie is built offline, serialized, and memory-mapped from the
-/// App Group container to stay under the ~48 MB extension ceiling; this
-/// in-memory form is the build and test representation.
+/// with its own unigram log-prior ("well" and "we'll" are siblings). The trie
+/// is built offline, serialized into the shipped model bundle, and rebuilt in
+/// memory at load — deliberately not memory-mapped (see ``NGramModelBuilder``).
 public final class Lexicon: @unchecked Sendable {
     struct Entry {
         let word: String

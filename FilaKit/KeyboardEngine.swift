@@ -4,12 +4,12 @@ import UIKit
 
 /// Owns the decoder and the mutable spatial model for the running keyboard.
 ///
-/// The decode substrate is a per-language model bundle (vocab trie + Bloomier
-/// n-gram) built offline from OpenSubtitles frequency data and shipped in the
-/// FilaKit resource bundle; the active language's `values.blmr` is memory-mapped
-/// so resident memory stays well under the ~48 MB extension ceiling. Only the
-/// active language is loaded. `UITextChecker` supplies out-of-vocabulary rescue
-/// in the same language (system dictionaries, no Full Access).
+/// Each enabled dictionary is a per-language model bundle in the FilaKit
+/// resource bundle: the vocab trie is rebuilt in memory at load, while the
+/// Bloomier n-gram tables are memory-mapped so their pages stay file-backed
+/// and barely count against the extension's memory ceiling. `UITextChecker`
+/// supplies out-of-vocabulary rescue in the primary language (system
+/// dictionaries, no Full Access).
 @MainActor
 final class KeyboardEngine {
     private(set) var decoder: Decoder
@@ -43,9 +43,9 @@ final class KeyboardEngine {
     }
 
     /// Point the keyboard at `primary` immediately (layout + adapted spatial
-    /// model, both cheap) and load the dictionaries off the main thread — trie
-    /// construction for the 80k-word vocabularies takes whole seconds on device,
-    /// far too slow for the extension's startup path. Until the load lands the
+    /// model, both cheap) and load the dictionaries off the main thread —
+    /// deserializing the shipped vocabularies into tries takes whole seconds
+    /// on device, far too slow for the extension's startup path. Until the load lands the
     /// decoder has an empty lexicon, so typing falls back to the raw
     /// nearest-letter reading and the system-checker rescue.
     private func activate(_ primary: KeyboardLanguage) {

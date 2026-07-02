@@ -1,8 +1,8 @@
 import Foundation
 
-/// Binary layout so the filter can be built offline, shipped, and memory-mapped
-/// from the App Group container (keeping resident memory low under the ~48 MB
-/// keyboard-extension ceiling).
+/// Binary layout so the filter can be built offline and memory-mapped in place
+/// from the shipped model bundle, keeping the keyboard extension's resident
+/// memory low.
 ///
 /// Header (little-endian): magic "BLMR" · version u32 · hashCount u32 ·
 /// cellCount u64 · seed u64, followed by `cellCount` table bytes.
