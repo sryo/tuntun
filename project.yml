@@ -16,6 +16,9 @@ settings:
     CODE_SIGN_STYLE: Automatic
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
+    # iPhone-only: an iPad-capable app must support all orientations (or set
+    # UIRequiresFullScreen) to pass App Store validation.
+    TARGETED_DEVICE_FAMILY: "1"
 
 targets:
   FilaKit:
@@ -43,7 +46,6 @@ targets:
       - path: Settings.bundle
         buildPhase: resources
     dependencies:
-      - package: FilaCore
       - target: FilaKit
         embed: true
       - target: FilaKeyboard
@@ -64,7 +66,6 @@ targets:
     sources:
       - path: Extension
     dependencies:
-      - package: FilaCore
       - target: FilaKit
     info:
       path: Extension/Info.plist

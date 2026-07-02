@@ -1,6 +1,5 @@
 import UIKit
 import FilaKit
-import FilaCore
 
 /// The keyboard extension's principal class. A thin host: it embeds the shared
 /// ``KeyboardControllerView`` and wires it to the document proxy, the system

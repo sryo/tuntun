@@ -11,7 +11,7 @@ struct FilaApp: App {
         }
         .onChange(of: scenePhase) { _, phase in
             // Copy Settings.app preferences into the App Group for the keyboard.
-            if phase == .active { SettingsSync.run() }
+            if phase == .active { SettingsStore.syncFromSystemSettings() }
         }
     }
 }

@@ -49,8 +49,8 @@ struct OnboardingView: View {
     }
 
     /// Persist a type axis and nudge the live keyboard: App Group (the keyboard
-    /// reads it), standard defaults (so the Settings.app slider agrees and
-    /// SettingsSync doesn't undo it), then the Darwin change notification.
+    /// reads it), standard defaults (so the Settings.app slider agrees and the
+    /// activation sync doesn't undo it), then the Darwin change notification.
     private func write(_ value: Double, key: String, apply: (SettingsStore) -> Void) {
         apply(SettingsStore.shared)
         UserDefaults.standard.set(value, forKey: key)

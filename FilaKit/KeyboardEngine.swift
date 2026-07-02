@@ -133,8 +133,9 @@ final class KeyboardEngine {
     /// The one-row keys the decoder resolves taps against.
     var keys: [KeyGeometry] { layout.keys }
 
-    /// Decode a tap sequence into ranked candidates, augmented with system-dictionary
-    /// rescue for out-of-vocabulary words the shipped model can't reconstruct.
+    /// Decode a tap sequence into ranked candidates — the complete strip policy:
+    /// trie decode, system-dictionary rescue for out-of-vocabulary words, smart
+    /// emoji, and the raw literal reading as the last-resort escape hatch.
     func candidates(for taps: [Double], context: [String], forced: [Int: Character] = [:]) -> [DecodeCandidate] {
         var result = decoder.decode(taps: taps, context: context, maxCandidates: 10, forced: forced)
         let raw = nearestLetters(for: taps, forced: forced)
@@ -149,6 +150,12 @@ final class KeyboardEngine {
         // Smart-emoji: suggest an emoji for the top word (just below it in the strip).
         if let top = result.first, let emoji = EmojiSuggestions.emoji(for: top.word) {
             result.insert(DecodeCandidate(word: emoji, score: top.score - 0.01), at: min(1, result.count))
+        }
+        // The literal reading always rides last, scored below the checker rescue.
+        // Aligned by construction — edits 0. Deliberately after the emoji insert
+        // so a bare literal never sprouts an emoji suggestion.
+        if !raw.isEmpty && !result.contains(where: { $0.word == raw }) {
+            result.append(DecodeCandidate(word: raw, score: -Double(taps.count) * 10))
         }
         return result
     }

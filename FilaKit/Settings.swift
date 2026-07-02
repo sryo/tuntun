@@ -9,13 +9,49 @@ public enum FilaConfig {
 /// User settings, shared between the container app (writes) and the keyboard
 /// extension (reads) via the App Group. A Darwin notification lets the extension
 /// repaint/reconfigure live when the app changes a setting.
+///
+/// Configuration travels through three stores:
+///  1. Settings.app (via `Settings.bundle`) writes to the app's *standard* defaults.
+///  2. `syncFromSystemSettings()` copies those into the App Group on every app
+///     activation — the only store the extension can read.
+///  3. Learned data (vocabulary, tap offsets) is separate: `PersonalizationStore`,
+///     written by the extension itself.
 @MainActor
 public final class SettingsStore {
     public static let shared = SettingsStore()
     private let defaults = UserDefaults(suiteName: FilaConfig.appGroupID)
     private static let darwinName = "com.sryo.fila.settings-changed" as CFString
 
-    public init() {}
+    private init() {}
+
+    /// `Settings.bundle` preferences are written to the app's *standard* defaults,
+    /// but the keyboard extension can only read the App Group. The container app
+    /// runs this on every activation to copy them across and notify the running
+    /// keyboard. (So changes made in Settings.app take effect after the app is
+    /// next opened.)
+    public static func syncFromSystemSettings() {
+        let std = UserDefaults.standard
+        // Seed defaults that match Settings.bundle, so values are correct even
+        // before the user ever opens the Settings page.
+        std.register(defaults: [
+            "primaryLanguage": "en", "languageWeight": 1.0,
+            "textScale": 1.0, "textWidth": -0.3,
+            "autoCapitalize": true, "smartSpacing": true,
+            "dict_en": true,
+        ])
+        guard let group = UserDefaults(suiteName: FilaConfig.appGroupID) else { return }
+
+        for key in ["primaryLanguage", "languageWeight",
+                    "textScale", "textWidth",
+                    "autoCapitalize", "smartSpacing"] {
+            if let value = std.object(forKey: key) { group.set(value, forKey: key) }
+        }
+        var enabled = KeyboardLanguage.allCases.filter { std.bool(forKey: "dict_\($0.rawValue)") }.map(\.rawValue)
+        if enabled.isEmpty { enabled = ["en"] }
+        group.set(enabled, forKey: "enabledDictionaries")
+
+        shared.notifyChanged()
+    }
 
     public var languageWeight: Double {
         get { defaults?.object(forKey: "languageWeight") as? Double ?? 1.0 }

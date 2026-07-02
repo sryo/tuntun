@@ -72,7 +72,7 @@ public final class KeyboardControllerView: UIView {
     /// default keyboard height.
     public static let preferredHeight: CGFloat = 40 + 6 + 76 + 6
 
-    private let settings = SettingsStore()
+    private let settings = SettingsStore.shared
     private var settingsToken: AnyObject?
     private var theme: Theme = .dark
     private var bonusPanel: BonusPanelView?
@@ -183,12 +183,7 @@ public final class KeyboardControllerView: UIView {
             render("")
             return
         }
-        var candidates = engine.candidates(for: tapBuffer, context: context, forced: forcedLetters)
-        let raw = engine.nearestLetters(for: tapBuffer, forced: forcedLetters)
-        if !raw.isEmpty && !candidates.contains(where: { $0.word == raw }) {
-            // The literal reading is aligned by construction — edits 0.
-            candidates.append(DecodeCandidate(word: raw, score: -Double(tapBuffer.count) * 10))
-        }
+        let candidates = engine.candidates(for: tapBuffer, context: context, forced: forcedLetters)
         // Auto-capitalize for display and commit; the lexicon/decoder stay lowercase.
         let display = candidates.map { DecodeCandidate(word: cased($0.word), score: $0.score, edits: $0.edits) }
         currentCandidates = display
