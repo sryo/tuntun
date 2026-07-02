@@ -83,7 +83,7 @@ public enum EmojiSuggestions {
         "estrella": "⭐️", "luna": "🌙", "dinero": "💰", "rico": "💰", "música": "🎵",
         "canción": "🎶",
         "teléfono": "📱", "celular": "📱", "móvil": "📱", "llamada": "📞", "coche": "🚗",
-        "carro": "🚗", "casa": "🏠", "trabajo": "💼",
+        "carro": "🚗", "auto": "🚗", "casa": "🏠", "trabajo": "💼",
         "dormir": "😴", "sueño": "😴", "cansado": "😪", "cansada": "😪", "genial": "😎",
         "guay": "😎", "wow": "😮", "guau": "😮", "enojado": "😡", "enfadado": "😡",
         "beso": "😘", "abrazo": "🤗", "correr": "🏃", "gimnasio": "💪", "fuerte": "💪",
