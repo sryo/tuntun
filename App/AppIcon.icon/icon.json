@@ -1,0 +1,66 @@
+{
+  "fill": {
+    "solid": "extended-srgb:0.30874,0.52568,0.43284,1.00000"
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "foreground.svg",
+          "name": "foreground",
+          "glass": true,
+          "position": {
+            "scale": 1,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    },
+    {
+      "layers": [
+        {
+          "image-name": "middle.png",
+          "name": "middle",
+          "glass": false,
+          "position": {
+            "scale": 1,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "layers": [
+        {
+          "image-name": "background.svg",
+          "name": "background",
+          "glass": false,
+          "position": {
+            "scale": 1,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}
