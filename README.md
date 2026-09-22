@@ -1,6 +1,6 @@
 # Tuntun
 
-![The same message typed on the standard iPhone keyboard and on Tuntun, which takes a third of the height](.github/demo.gif)
+![The same message typed in landscape on the standard iPhone keyboard, which covers half the screen, and on Tuntun, which leaves the conversation visible](.github/demo.gif)
 
 Tuntun is an iOS keyboard inspired by [Minuum](https://minuum.com): a full
 keyboard compressed into a single line, about a third the height of the one
